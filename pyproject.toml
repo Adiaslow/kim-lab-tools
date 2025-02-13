@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kim-lab-tools"
+dynamic = ["version"]
+description = "Tools and utilities for laboratory data analysis"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools_scm]
+write_to = "src/kim_lab_tools/_version.py" 

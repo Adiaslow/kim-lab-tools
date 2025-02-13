@@ -1,0 +1,1 @@
+// Move contents from image_tile.py and section_image.py here 
