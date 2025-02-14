@@ -1,40 +1,40 @@
-# examples/roi_area_analysis.py
+# scripts/roi_area_analysis.py
 """
-Example script demonstrating how to use the ROI Area Analyzer.
+This script is used to analyze the area of ROIs in a directory of pickle files.
 
-This script shows how to:
-1. Load and analyze ROI data from pickle files
-2. Generate different types of summaries
-3. Save results to CSV files
-4. Create basic visualizations
+Usage:
+    python scripts/roi_area_analysis.py <path_to_roi_pickle_file_or_directory>
 
-Example usage:
-    python examples/roi_area_analysis.py /path/to/roi/directory
+Examples:
+    ```bash
+    python scripts/roi_area_analysis.py /path/to/roi/directory # using default settings
+    python scripts/roi_area_analysis.py /path/to/roi/directory --max-workers 4 # using 4 worker threads
+    python scripts/roi_area_analysis.py /path/to/roi/directory --use-gpu # using GPU if available
+    python scripts/roi_area_analysis.py /path/to/roi/directory --output-dir /path/to/output/directory # save output to a directory
+    ```
 """
 
-import os
-import sys
+# Standard Library Imports
 import argparse
+import sys
 from pathlib import Path
+
+# Third Party Imports
+import pandas as pd
 from typing import Optional
 
-# Add the src directory to Python path for imports
-src_path = str(Path(__file__).parent.parent / "src")
-if src_path not in sys.path:
-    sys.path.insert(0, src_path)
-
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-from tqdm import tqdm
-
+# Local Imports
 from src.kim_lab_tools.application.use_cases.analyzers.roi_area_analyzer import (
     ROIAreaAnalyzer,
 )
 
 
 def parse_args() -> argparse.Namespace:
-    """Parse command line arguments."""
+    """Parse command line arguments.
+
+    Returns:
+        argparse.Namespace: Parsed command line arguments
+    """
     parser = argparse.ArgumentParser(
         description="Example script for ROI area analysis",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -56,85 +56,43 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Maximum number of worker threads for parallel processing",
     )
+    parser.add_argument(
+        "--use-gpu",
+        action="store_true",
+        help="Use GPU acceleration if available",
+    )
     return parser.parse_args()
 
 
-def create_visualizations(df: pd.DataFrame, output_dir: Path) -> None:
-    """Create basic visualizations of the analysis results.
-
-    Args:
-        df: DataFrame containing analysis results
-        output_dir: Directory to save visualizations
-    """
-    # Create output directory if it doesn't exist
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Set style
-    plt.style.use("seaborn")
-
-    with tqdm(total=2, desc="Creating visualizations") as pbar:
-        # 1. Box plot of areas by region
-        plt.figure(figsize=(12, 6))
-        sns.boxplot(data=df, x="region_name", y="area_pixels")
-        plt.xticks(rotation=45, ha="right")
-        plt.title("Distribution of ROI Areas by Region")
-        plt.tight_layout()
-        plt.savefig(output_dir / "area_by_region_boxplot.png", dpi=300)
-        plt.close()
-        pbar.update(1)
-
-        # 2. Area trends across sections
-        plt.figure(figsize=(12, 6))
-        section_means = (
-            df.groupby(["section_id", "region_name"])["area_pixels"].mean().unstack()
-        )
-        section_means.plot(marker="o")
-        plt.title("ROI Area Trends Across Sections")
-        plt.xlabel("Section ID")
-        plt.ylabel("Mean Area (pixels)")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-        plt.tight_layout()
-        plt.savefig(output_dir / "area_trends.png", dpi=300)
-        plt.close()
-        pbar.update(1)
-
-
-def save_results(
+def print_statistics(
     results_df: pd.DataFrame,
-    region_summary: pd.DataFrame,
-    section_summary: pd.DataFrame,
-    output_dir: Path,
+    analyzer: ROIAreaAnalyzer,
 ) -> None:
-    """Save analysis results to CSV files.
-
-    Args:
-        results_df: DataFrame containing detailed results
-        region_summary: DataFrame containing summary by region
-        section_summary: DataFrame containing summary by section
-        output_dir: Directory to save results
-    """
-    with tqdm(total=3, desc="Saving results") as pbar:
-        # Save detailed results
-        results_df.to_csv(output_dir / "detailed_results.csv", index=False)
-        pbar.update(1)
-
-        # Save region summary
-        region_summary.to_csv(output_dir / "region_summary.csv")
-        pbar.update(1)
-
-        # Save section summary
-        section_summary.to_csv(output_dir / "section_summary.csv")
-        pbar.update(1)
-
-
-def print_statistics(results_df: pd.DataFrame) -> None:
     """Print basic statistics about the analysis results.
 
     Args:
         results_df: DataFrame containing analysis results
+        analyzer: ROIAreaAnalyzer instance with method statistics
     """
-    print("\nQuick Statistics:")
+    # System information
+    sys_info: dict = analyzer.get_system_info()
+    print("\nSystem Information:")
     print("-----------------")
+    print(f"System: {sys_info['system']} {sys_info['machine']}")
+    print(f"GPU Backend: {sys_info['gpu_backend'] or 'None'}")
+    if sys_info["using_gpu"]:
+        print(f"GPU Device: {sys_info.get('gpu_device', 'Unknown')}")
+
+    # Computation method statistics
+    print("\nComputation Methods Used:")
+    print("-----------------------")
+    print(f"Fast method: {analyzer.method_counts['fast']} ROIs")
+    print(f"GPU method: {analyzer.method_counts['gpu']} ROIs")
+    print(f"Sparse method: {analyzer.method_counts['sparse']} ROIs")
+
+    # General statistics
+    print("\nROI Statistics:")
+    print("--------------")
     print(f"Total ROIs analyzed: {len(results_df)}")
     print(f"Number of unique regions: {results_df['region_name'].nunique()}")
     print(f"Number of sections: {results_df['section_id'].nunique()}")
@@ -142,22 +100,61 @@ def print_statistics(results_df: pd.DataFrame) -> None:
     print(results_df.groupby("region_name")["area_pixels"].mean().round(2).to_string())
 
 
+def save_results(
+    results_df: pd.DataFrame,
+    region_summary: pd.DataFrame,
+    section_summary: pd.DataFrame,
+    input_path: Path,
+    output_dir: Optional[Path] = None,
+) -> None:
+    """Save the analysis results and summaries to CSV files.
+
+    Args:
+        results_df: DataFrame containing analysis results
+        region_summary: DataFrame containing summary by region
+        section_summary: DataFrame containing summary by section
+        input_path: Path to the input file or directory
+        output_dir: Optional path to the output directory. If not provided, results are saved in the input directory.
+    """
+    if not results_df.empty:
+        # Use the output directory if provided, otherwise use the input directory
+        save_dir = output_dir if output_dir else input_path
+        results_path = save_dir / "roi_area_analysis.csv"
+        region_summary_path = save_dir / "region_summary.csv"
+        section_summary_path = save_dir / "section_summary.csv"
+
+        results_df.to_csv(results_path, index=False)
+        region_summary.to_csv(region_summary_path, index=False)
+        section_summary.to_csv(section_summary_path, index=False)
+
+        print(f"Results saved to: {results_path}")
+        print(f"Region summary saved to: {region_summary_path}")
+        print(f"Section summary saved to: {section_summary_path}")
+    else:
+        print("No results to save.")
+
+
 def main() -> int:
     """Main function demonstrating ROI area analysis."""
-    args = parse_args()
-    input_path = Path(args.input_path)
-    output_dir = Path(args.output_dir)
+    args: argparse.Namespace = parse_args()
+    input_path: Path = Path(args.input_path)
+
+    # Get base directory (directory containing pkl files)
+    base_dir: Path = input_path.parent if input_path.is_file() else input_path
+    # Set output directory using the base directory name
+    output_dir: Path = base_dir.parent / f"{base_dir.name}_area_analysis"
 
     try:
-        # Initialize analyzer with the parent directory if input is a file
+        # Initialize analyzer with the same base directory logic
         analyzer = ROIAreaAnalyzer(
             str(input_path.parent if input_path.is_file() else input_path),
             max_workers=args.max_workers,
+            use_gpu=args.use_gpu,
         )
 
         # Get detailed results
         print("\nAnalyzing ROIs...")
-        results_df = analyzer.analyze_directory()
+        results_df: pd.DataFrame = analyzer.analyze_directory()
 
         if results_df.empty:
             print("No ROIs found to analyze!")
@@ -178,19 +175,17 @@ def main() -> int:
 
         # Get summaries
         print("\nGenerating summaries...")
-        region_summary = analyzer.get_summary_by_region(results_df)
-        section_summary = analyzer.get_summary_by_section(results_df)
+        region_summary: pd.DataFrame = analyzer.get_summary_by_region(results_df)
+        section_summary: pd.DataFrame = analyzer.get_summary_by_section(results_df)
 
         # Save results
-        save_results(results_df, region_summary, section_summary, output_dir)
+        save_results(
+            results_df, region_summary, section_summary, input_path, output_dir
+        )
         print(f"\nResults saved to: {output_dir}/")
 
-        # Create visualizations if we have multiple ROIs
-        if len(results_df) > 1:
-            create_visualizations(results_df, output_dir)
-
-        # Print statistics
-        print_statistics(results_df)
+        # Print statistics with method tracking
+        print_statistics(results_df, analyzer)
 
         return 0
 
