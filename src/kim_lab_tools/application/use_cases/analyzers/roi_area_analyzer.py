@@ -9,12 +9,25 @@ and regions, following the structure of the Allen Brain Atlas.
 import os
 import pickle
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional, Any
+from typing import Dict, List, Tuple, Optional, Any, Iterator
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
+from functools import lru_cache
+import logging
+import io
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+# Constants
+BATCH_SIZE = 10
+BUFFER_SIZE = 1024 * 1024  # 1MB buffer for file reading
 
 
 @dataclass
@@ -36,7 +49,7 @@ class ROIAreaAnalyzer:
         - Values are uint8 intensity values
     """
 
-    def __init__(self, input_dir: str, max_workers: int = None):
+    def __init__(self, input_dir: str, max_workers: Optional[int] = None):
         """Initialize the ROI area analyzer.
 
         Args:
@@ -45,8 +58,10 @@ class ROIAreaAnalyzer:
                        If None, uses the default from ThreadPoolExecutor.
         """
         self.input_dir = Path(input_dir)
-        self.max_workers = max_workers
+        self.max_workers = max_workers if max_workers is not None else os.cpu_count()
+        self._cache = {}
 
+    @lru_cache(maxsize=1024)
     def _parse_filename(self, filename: str) -> Tuple[str, str, str]:
         """Parse ROI filename into components.
 
@@ -83,6 +98,18 @@ class ROIAreaAnalyzer:
 
         return len(roi_coords)
 
+    def _read_pickle_file(self, file_path: Path) -> Any:
+        """Read pickle file with optimized buffering.
+
+        Args:
+            file_path: Path to the pickle file
+
+        Returns:
+            Unpickled data object
+        """
+        with open(file_path, "rb", buffering=BUFFER_SIZE) as f:
+            return pickle.load(f)
+
     def _process_single_file(self, file: Path) -> Optional[Dict[str, Any]]:
         """Process a single ROI file.
 
@@ -95,21 +122,59 @@ class ROIAreaAnalyzer:
         try:
             animal_id, section_id, region_name = self._parse_filename(file.name)
 
-            with open(file, "rb") as f:
-                roi_data = pickle.load(f)
+            # Use cached result if available
+            cache_key = str(file)
+            if cache_key in self._cache:
+                return self._cache[cache_key]
 
+            roi_data = self._read_pickle_file(file)
             area = self._compute_roi_area(roi_data)
 
-            return {
+            result = {
                 "animal_id": animal_id,
                 "section_id": section_id,
                 "region_name": region_name,
                 "area_pixels": area,
                 "file_path": str(file),
             }
+
+            # Cache the result
+            self._cache[cache_key] = result
+            return result
+
         except Exception as e:
-            print(f"Error processing {file.name}: {str(e)}")
+            logger.error(f"Error processing {file.name}: {str(e)}")
             return None
+
+    def _process_batch(self, files: List[Path]) -> List[Dict[str, Any]]:
+        """Process a batch of files in parallel.
+
+        Args:
+            files: List of files to process
+
+        Returns:
+            List of processed results
+        """
+        results = []
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            future_to_file = {
+                executor.submit(self._process_single_file, file): file for file in files
+            }
+            for future in as_completed(future_to_file):
+                result = future.result()
+                if result is not None:
+                    results.append(result)
+        return results
+
+    def _get_file_batches(self) -> Iterator[List[Path]]:
+        """Get batches of files to process.
+
+        Yields:
+            Lists of file paths, with each list containing at most BATCH_SIZE files
+        """
+        pkl_files = list(self.input_dir.glob("*.pkl"))
+        for i in range(0, len(pkl_files), BATCH_SIZE):
+            yield pkl_files[i : i + BATCH_SIZE]
 
     def analyze_directory(self) -> pd.DataFrame:
         """Analyze all ROI files in the input directory.
@@ -126,39 +191,45 @@ class ROIAreaAnalyzer:
             Area is computed as the number of coordinates in the ROI dictionary,
             which represents the number of pixels in the ROI mask.
         """
-        pkl_files = list(self.input_dir.glob("*.pkl"))
-        if not pkl_files:
-            print(f"No .pkl files found in {self.input_dir}")
+        if not self.input_dir.exists():
+            logger.error(f"Directory not found: {self.input_dir}")
             return pd.DataFrame()
 
-        results = []
+        pkl_files = list(self.input_dir.glob("*.pkl"))
+        if not pkl_files:
+            logger.warning(f"No .pkl files found in {self.input_dir}")
+            return pd.DataFrame()
 
-        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all files for processing
-            future_to_file = {
-                executor.submit(self._process_single_file, file): file
-                for file in pkl_files
-            }
+        all_results = []
+        total_batches = (len(pkl_files) + BATCH_SIZE - 1) // BATCH_SIZE
 
-            # Process results as they complete with progress bar
-            with tqdm(total=len(pkl_files), desc="Processing ROI files") as pbar:
-                for future in as_completed(future_to_file):
-                    result = future.result()
-                    if result is not None:
-                        results.append(result)
-                    pbar.update(1)
+        with tqdm(total=len(pkl_files), desc="Processing ROI files") as pbar:
+            for batch in self._get_file_batches():
+                batch_results = self._process_batch(batch)
+                all_results.extend(batch_results)
+                pbar.update(len(batch))
 
         # Create DataFrame and optimize types
-        df = pd.DataFrame(results)
+        df = pd.DataFrame(all_results)
         if not df.empty:
-            # Optimize memory usage by converting to categorical where appropriate
-            for col in ["animal_id", "section_id", "region_name"]:
-                df[col] = df[col].astype("category")
-
-            # Ensure area_pixels is integer type
-            df["area_pixels"] = df["area_pixels"].astype(np.int32)
+            # Optimize memory usage
+            self._optimize_dataframe(df)
 
         return df
+
+    @staticmethod
+    def _optimize_dataframe(df: pd.DataFrame) -> None:
+        """Optimize DataFrame memory usage.
+
+        Args:
+            df: DataFrame to optimize
+        """
+        # Convert string columns to categorical
+        for col in ["animal_id", "section_id", "region_name"]:
+            df[col] = df[col].astype("category")
+
+        # Convert numeric columns to appropriate types
+        df["area_pixels"] = df["area_pixels"].astype(np.int32)
 
     def get_summary_by_region(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
         """Get summary statistics grouped by region.
@@ -174,7 +245,9 @@ class ROIAreaAnalyzer:
 
         with tqdm(total=1, desc="Generating region summary") as pbar:
             summary = (
-                df.groupby("region_name")
+                df.groupby(
+                    "region_name", observed=True
+                )  # Add observed=True for categorical
                 .agg(
                     {
                         "area_pixels": [
@@ -209,7 +282,9 @@ class ROIAreaAnalyzer:
 
         with tqdm(total=1, desc="Generating section summary") as pbar:
             summary = (
-                df.groupby("section_id")
+                df.groupby(
+                    "section_id", observed=True
+                )  # Add observed=True for categorical
                 .agg(
                     {
                         "area_pixels": [
@@ -229,3 +304,8 @@ class ROIAreaAnalyzer:
             pbar.update(1)
 
         return summary
+
+    def clear_cache(self) -> None:
+        """Clear the internal cache of processed results."""
+        self._cache.clear()
+        self._parse_filename.cache_clear()

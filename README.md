@@ -11,3 +11,9 @@ pip install kim-lab-tools
 ```
 
 ## Usage
+
+### ROI Area Analysis
+
+```bash
+python scripts/roi_area_analysis.py /path/to/roi/directory --output-dir /path/to/output/directory
+```
