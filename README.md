@@ -30,7 +30,6 @@ git clone https://github.com/Adiaslow/kim-lab-tools.git
 ### ROI Area Analysis
 
 ```bash
-cd kim-lab-tools
 python scripts/roi_area_analysis.py /path/to/roi/directory # using default settings
 python scripts/roi_area_analysis.py /path/to/roi/directory --max-workers 4 # using 4 worker threads
 python scripts/roi_area_analysis.py /path/to/roi/directory --use-gpu # using GPU if available
