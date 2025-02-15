@@ -10,7 +10,14 @@
 
 A python-based toolkit representing modular refactors of pre-existing code Kim Lab programs or new tools for a variety of tasks like:
 
-- ROI area analysis
+- ROI area analysis (To Be Verified)
+- Cortical Image Processing (In Progress/On Hold)
+  - Cell Detection (In Progress/On Hold)
+  - Cell Tracing (In Progress/On Hold)
+  - Cell Counting (In Progress/On Hold)
+- Axon Depth Analysis (Not Implemented)
+  - Transformations to Arbitrary Space (Not Implemented)
+  - Intraareal Projection Analysis (Not Implemented)
 
 ## Installation
 
