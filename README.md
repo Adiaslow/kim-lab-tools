@@ -1,4 +1,4 @@
-# Kim Lab Tools
+# Kim Lab Tools (Version 0.1.0 - Pre-Production)
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Pylint](https://github.com/Adiaslow/kim-lab-tools/actions/workflows/pylint.yml/badge.svg)](https://github.com/Adiaslow/kim-lab-tools/actions/workflows/pylint.yml)
@@ -13,7 +13,7 @@ This repository contains various python-based tools that represent modular refac
 ## Installation
 
 ```bash
-pip install kim-lab-tools
+git clone https://github.com/Adiaslow/kim-lab-tools.git
 ```
 
 ## Usage
@@ -21,6 +21,7 @@ pip install kim-lab-tools
 ### ROI Area Analysis
 
 ```bash
+cd kim-lab-tools
 python scripts/roi_area_analysis.py /path/to/roi/directory # using default settings
 python scripts/roi_area_analysis.py /path/to/roi/directory --max-workers 4 # using 4 worker threads
 python scripts/roi_area_analysis.py /path/to/roi/directory --use-gpu # using GPU if available
