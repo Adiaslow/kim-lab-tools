@@ -8,7 +8,9 @@
 
 ## Overview
 
-This repository contains various python-based tools that represent modular refactors of pre-existing code or new code for a variety of tasks.
+A python-based toolkit representing modular refactors of pre-existing code Kim Lab programs or new tools for a variety of tasks like:
+
+- ROI area analysis
 
 ## Installation
 
