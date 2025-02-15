@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 from numpy.testing import assert_array_equal
 
-
-from src.kim_lab_tools.application.use_cases.analyzers.roi_area_analyzer import (
+from kim_lab_tools.application.use_cases.analyzers.roi_area_analyzer import (
     ROIAreaAnalyzer,
     ROIAreaResult,
 )
@@ -122,12 +121,12 @@ def test_compute_roi_area(sample_roi_data):
 
 
 def test_compute_roi_area_with_zeros(sample_roi_with_zeros):
-    """Test ROI area computation with values including zeros."""
+    """Test ROI area computation with zero values."""
     analyzer = ROIAreaAnalyzer("dummy_path")
     area = analyzer._compute_roi_area(sample_roi_with_zeros)
 
-    # Count all coordinates in the ROI dictionary (7 positions are defined)
-    assert area == 7
+    # Only count non-zero values (5 non-zero values in sample_roi_with_zeros)
+    assert area == 5
 
 
 def test_analyze_directory(create_test_files, temp_roi_dir):

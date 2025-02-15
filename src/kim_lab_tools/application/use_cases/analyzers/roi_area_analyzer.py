@@ -2,7 +2,7 @@
 """
 ROI Area Analyzer module for computing areas of regions of interest from pickle files.
 
-This module provides functionality to analyze the area of ROIs across multiple brain sections
+This module provides functionality to analyze the area of ROIs across multiple brain segments
 and regions, following the structure of the Allen Brain Atlas.
 """
 
@@ -75,12 +75,12 @@ class ROIAreaResult:
     """Data class for storing ROI area analysis results.
 
     Attributes:
-        section_id: ID of the brain section
+        segment_id: ID of the brain segment
         region_name: Name of the brain region
         area_pixels: Area of the ROI in pixels
     """
 
-    section_id: str
+    segment_id: str
     region_name: str
     area_pixels: int
 
@@ -119,7 +119,7 @@ class ROIAreaAnalyzer:
         analyze_directory: Analyze all ROI files in the input directory
         _optimize_dataframe: Optimize DataFrame memory usage
         get_summary_by_region: Get summary statistics by region
-        get_summary_by_section: Get summary statistics by section
+        get_summary_by_segment: Get summary statistics by segment
         clear_cache: Clear the cache of processed ROI data
         get_system_info: Get system information and GPU details
     """
@@ -328,7 +328,7 @@ class ROIAreaAnalyzer:
             filename: Name of the ROI file
 
         Returns:
-            Tuple of (animal_id, section_id, region_name)
+            Tuple of (animal_id, segment_id, region_name)
         """
         base: str = os.path.splitext(filename)[0]
         parts: List[str] = base.split("_")
@@ -369,16 +369,16 @@ class ROIAreaAnalyzer:
 
             # Parse filename first to avoid loading file if filename is invalid
             animal_id: str
-            section_id: str
+            segment_id: str
             region_name: str
-            animal_id, section_id, region_name = self._parse_filename(file.name)
+            animal_id, segment_id, region_name = self._parse_filename(file.name)
 
             roi_data: Dict[str, Any] = self._read_pickle_file(file)
             area: int = self._compute_roi_area(roi_data)
 
             result: Dict[str, Any] = {
                 "animal_id": animal_id,
-                "section_id": section_id,
+                "segment_id": segment_id,
                 "region_name": region_name,
                 "area_pixels": area,
                 "file_path": str(file),
@@ -418,14 +418,14 @@ class ROIAreaAnalyzer:
 
                     # Parse filename
                     animal_id: str
-                    section_id: str
+                    segment_id: str
                     region_name: str
-                    animal_id, section_id, region_name = self._parse_filename(file.name)
+                    animal_id, segment_id, region_name = self._parse_filename(file.name)
                     roi_data: Dict[str, Any] = self._read_pickle_file(file)
 
                     # Store data and file info
                     roi_data_list.append(roi_data)
-                    file_info_list.append((file, animal_id, section_id, region_name))
+                    file_info_list.append((file, animal_id, segment_id, region_name))
 
                 except Exception as e:
                     logger.error(f"Error loading {file.name}: {str(e)}")
@@ -450,12 +450,12 @@ class ROIAreaAnalyzer:
                 areas: List[int] = self._process_batch_gpu(large_rois)
 
                 # Match areas with file info
-                for roi_data, area, (file, animal_id, section_id, region_name) in zip(
+                for roi_data, area, (file, animal_id, segment_id, region_name) in zip(
                     large_rois, areas, file_info_list[: len(large_rois)]
                 ):
                     result: Dict[str, Any] = {
                         "animal_id": animal_id,
-                        "section_id": section_id,
+                        "segment_id": segment_id,
                         "region_name": region_name,
                         "area_pixels": area,
                         "file_path": str(file),
@@ -471,23 +471,23 @@ class ROIAreaAnalyzer:
 
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 future_to_roi = {}
-                for roi_data, (file, animal_id, section_id, region_name) in zip(
+                for roi_data, (file, animal_id, segment_id, region_name) in zip(
                     remaining_rois, remaining_files
                 ):
                     future = executor.submit(self._compute_roi_area, roi_data)
-                    future_to_roi[future] = (file, animal_id, section_id, region_name)
+                    future_to_roi[future] = (file, animal_id, segment_id, region_name)
 
                 for future in as_completed(future_to_roi):
                     try:
                         area: int = future.result()
                         file: Path
                         animal_id: str
-                        section_id: str
+                        segment_id: str
                         region_name: str
-                        file, animal_id, section_id, region_name = future_to_roi[future]
+                        file, animal_id, segment_id, region_name = future_to_roi[future]
                         result: Dict[str, Any] = {
                             "animal_id": animal_id,
-                            "section_id": section_id,
+                            "segment_id": segment_id,
                             "region_name": region_name,
                             "area_pixels": area,
                             "file_path": str(file),
@@ -584,7 +584,7 @@ class ROIAreaAnalyzer:
         Returns:
             DataFrame containing analysis results with columns:
             - animal_id: ID of the animal
-            - section_id: ID of the brain section
+            - segment_id: ID of the brain segment
             - region_name: Name of the brain region
             - area_pixels: Area of the ROI in pixels
             - file_path: Path to the source file
@@ -627,7 +627,7 @@ class ROIAreaAnalyzer:
     def _optimize_dataframe(df: pd.DataFrame) -> None:
         """Optimize DataFrame memory usage."""
         # Convert string columns to categorical
-        for col in ["animal_id", "section_id", "region_name"]:
+        for col in ["animal_id", "segment_id", "region_name"]:
             df[col] = df[col].astype("category")
 
         # Convert numeric columns to appropriate types
@@ -663,14 +663,14 @@ class ROIAreaAnalyzer:
             pbar.update(1)
         return summary
 
-    def get_summary_by_section(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
-        """Get summary statistics grouped by section."""
+    def get_summary_by_segment(self, df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """Get summary statistics grouped by segment."""
         if df is None:
             df = self.analyze_directory()
 
-        with tqdm(total=1, desc="Generating section summary") as pbar:
+        with tqdm(total=1, desc="Generating segment summary") as pbar:
             summary: pd.DataFrame = (
-                df.groupby("section_id", observed=True)
+                df.groupby("segment_id", observed=True)
                 .agg(
                     {
                         "area_pixels": [
@@ -688,7 +688,7 @@ class ROIAreaAnalyzer:
             )
             # Name the columns
             summary.columns = ["count", "mean", "std", "min", "max", "q25", "q75"]
-            # Reset index to make section_id the first column
+            # Reset index to make segment_id the first column
             summary = summary.reset_index()
             pbar.update(1)
         return summary
@@ -782,7 +782,7 @@ if __name__ == "__main__":
         print("-" * 20)
         print(f"Total ROIs analyzed: {len(df)}")
         print(f"Number of unique regions: {df['region_name'].nunique()}")
-        print(f"Number of sections: {df['section_id'].nunique()}")
+        print(f"Number of segments: {df['segment_id'].nunique()}")
 
         sys.exit(0)
 
